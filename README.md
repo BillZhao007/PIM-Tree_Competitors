@@ -1,8 +1,10 @@
-# Indexes used for Cuckoo Trie benchmarks
+# Indexes used for PIM-Tree benchmarks
 
 This repository is forked from https://github.com/cuckoo-trie/other-benchmarked-indexes. It is used here as a competitor in evaluation of the PIM-Tree.
 
-## Original Introduction to the Repo
+# Original Introduction to the Repo
+
+# Indexes used for Cuckoo Trie benchmarks
 
 The repo contains the code for the indexes the Cuckoo Trie was compared to in Cuckoo Trie: Exploiting Memory-Level Parallelism for Efficient DRAM Indexing. The code for the Cuckoo Trie index itself is [here](https://github.com/cuckoo-trie/cuckoo-trie-code).
 
