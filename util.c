@@ -13,7 +13,7 @@
 
 #define HUGEPAGE_LOG_SIZE 21
 
-#define DATASET_DEFAULT_SIZE 10000000
+#define DATASET_DEFAULT_SIZE 100000000
 
 #define PROC_STAT_FILENAME "/proc/self/stat"
 
@@ -440,6 +440,23 @@ void rand_zipf_rank_init(rand_distribution* dist, uint64_t max, double skew) {
 	dist->type = DIST_ZIPF_RANK;
 }
 
+#ifdef PIM_EXP
+void rand_pim_init(rand_distribution* dist, uint64_t max, double skew, uint64_t idx_max) {
+	rand_zipf_init(dist, max, skew);
+	dist->type = DIST_PIM;
+	dist->pim_idx_max = idx_max;
+	uint64_t j, tmp;
+	for(uint64_t i = 0; i < max; i++)
+		dist->pim_idx[i] = i;
+	for(uint64_t i = 0; i < max; i++) {
+		j = rand_uint64() % (max - i);
+		tmp = dist->pim_idx[i];
+		dist->pim_idx[i] = dist->pim_idx[j];
+		dist->pim_idx[j] = tmp;
+	}
+}
+#endif
+
 uint64_t mix(uint64_t x) {
 	x ^= x >> 33;
 	x *= 0xC2B2AE3D27D4EB4FULL;  // Random prime
@@ -483,10 +500,18 @@ uint64_t rand_dist(rand_distribution* dist) {
 		// Permute the output. Otherwise, all common values will be near one another
 		assert(dist->max > 1000);  // When <max> is small, collisions change the distribution considerably.
 		return mix(zipf_rand) % dist->max;
-	} else {
+	} else if(dist->type == DIST_ZIPF_RANK) {
 		assert(dist->type == DIST_ZIPF_RANK);
 		return zipf_rand;
 	}
+	#ifdef PIM_EXP
+	else if(dist->type == DIST_PIM) {
+		uint64_t rank_idx = mix(zipf_rand) % dist->max;
+		uint64_t rank_size = dist->pim_idx_max / dist->max;
+		uint64_t pim_rand_res = rank_size * rank_idx + (rand_uint64() % rank_size);
+		return pim_rand_res;
+	}
+	#endif
 }
 
 typedef struct {
