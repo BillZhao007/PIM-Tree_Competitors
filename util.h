@@ -26,6 +26,8 @@
 
 #define MAX_ZIPF_RANGES 10000
 
+#define PIM_EXP true
+
 // Sample a number in [0,max) with all numbers having equal probability.
 #define DIST_UNIFORM 0
 
@@ -36,6 +38,10 @@
 // Same as DIST_ZIPF, but with 0 being the most common number, 1 the
 // second most common, and so on.
 #define DIST_ZIPF_RANK 2
+
+#ifdef PIM_EXP
+#define DIST_PIM 3
+#endif
 
 extern uint64_t rand_state;
 
@@ -73,6 +79,11 @@ typedef struct {
 	double skew;
 	uint64_t max;
 	int type;
+
+	#ifdef PIM_EXP
+	uint64_t pim_idx[MAX_ZIPF_RANGES];
+	uint64_t pim_idx_max;
+	#endif
 } rand_distribution;
 
 typedef struct {
