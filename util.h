@@ -201,6 +201,7 @@ args_t* parse_args(const flag_spec_t* flags, int argc, char** argv);
 int has_flag(args_t* args, const char* name);
 int get_int_flag(args_t* args, const char* name, unsigned int def_value);
 uint64_t get_uint64_flag(args_t* args, const char* name, uint64_t def_value);
+double get_double_flag(args_t* args, const char* name, double def_value);
 void dynamic_buffer_init(dynamic_buffer_t* buf);
 uint64_t dynamic_buffer_extend(dynamic_buffer_t* buf, uint64_t data_size);
 string_kv** create_string_kvs(dataset_t* dataset);
