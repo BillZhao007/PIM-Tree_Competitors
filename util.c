@@ -284,6 +284,15 @@ uint64_t get_uint64_flag(args_t* args, const char* name, uint64_t def_value) {
 	return def_value;
 }
 
+double get_double_flag(args_t* args, const char* name, double def_value) {
+	int i;
+	for (i = 0;i < args->num_flags; i++) {
+		if (!strcmp(args->flags[i].name, name))
+			return atof(args->flags[i].value);
+	}
+	return def_value;
+}
+
 int has_flag(args_t* args, const char* name) {
 	int i;
 	for (i = 0;i < args->num_flags; i++) {
