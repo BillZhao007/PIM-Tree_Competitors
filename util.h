@@ -210,6 +210,7 @@ uint64_t spec_read_latest_block_size(const ycsb_workload_spec* spec, int num_thr
 void rand_uniform_init(rand_distribution* dist, uint64_t max);
 void rand_zipf_init(rand_distribution* dist, uint64_t max, double skew);
 void rand_zipf_rank_init(rand_distribution* dist, uint64_t max, double skew);
+void rand_pim_init(rand_distribution* dist, uint64_t max, double skew, uint64_t idx_max);
 uint64_t rand_dist(rand_distribution* dist);
 int run_multiple_threads(void* (*thread_func)(void*), int num_threads, void* thread_contexts, int context_size);
 void report_mt(float duration, uint64_t num_ops, int num_threads);
