@@ -326,13 +326,14 @@ void test_mem_usage(dataset_t* dataset) {
 
 const ycsb_workload_spec YCSB_A_SPEC = {{0.5,  0,    0.5,  0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_B_SPEC = {{0.95, 0,    0.05, 0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
-const ycsb_workload_spec YCSB_C_SPEC = {{0,  0,    1.0,    0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
+const ycsb_workload_spec YCSB_C_SPEC = {{0.001,  0,    0,    0.999,    0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_D_SPEC = {{0,    0, 0,    0, 1.0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_E_SPEC = {{0,    0,    0,    0.05, 0.95, 0  }, 2  * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_F_SPEC = {{0.5,  0,    0,    0,    0,    0.5}, 10 * MILLION, DIST_ZIPF};
 
 void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* workload,
-							const ycsb_workload_spec* spec, int thread_id, int num_threads, double skewness=YCSB_SKEW) {
+							const ycsb_workload_spec* spec, int thread_id, int num_threads,
+							double skewness=YCSB_SKEW) {
 	kv_t* kv;
 	uint64_t i;
 	uint64_t data_size;
@@ -395,12 +396,13 @@ void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* w
 				blob_t* key = (blob_t*) (workload_buf.ptr + op->data_pos);
 				key->size = kv->key_size;
 				memcpy(key->bytes, kv->kv, kv->key_size);
+				break;
 			}
-			break;
 
-			case YCSB_READ_LATEST:
+			case YCSB_READ_LATEST: {
 				// Data for read-latest ops is generated separately
 				break;
+			}
 
 			case YCSB_RMW:
 			case YCSB_UPDATE: {
@@ -413,8 +415,8 @@ void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* w
 				new_kv->value_size = kv->value_size;
 				memcpy(new_kv->kv, kv->kv, kv->key_size);
 				memset(new_kv->kv + new_kv->key_size, 7, new_kv->value_size);  // Update to a dummy value
+				break;
 			}
-			break;
 
 			case YCSB_INSERT: {
 				kv = kv_ptrs[insert_offset + num_inserts];
@@ -423,12 +425,13 @@ void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* w
 				op->data_pos = dynamic_buffer_extend(&workload_buf, data_size);
 
 				memcpy(workload_buf.ptr + op->data_pos, kv, data_size);
+				break;
 			}
-			break;
 
-			default:
+			default: {
 				printf("Error: Unknown YCSB op type\n");
 				return;
+			}
 		}
 	}
 
@@ -774,9 +777,10 @@ int main(int argc, char** argv) {
 	}
 
 	if (is_ycsb) {
-		if (has_flag(args, "--ycsb-uniform-dist"))
-			ycsb_spec.distribution = DIST_UNIFORM;
-
+		// if (has_flag(args, "--ycsb-uniform-dist"))
+		// 	ycsb_spec.distribution = DIST_UNIFORM;
+		ycsb_spec.distribution = dist_class;
+		ycsb_spec.num_ops = dataset_size / 100;
 		test_ycsb(&dataset, &ycsb_spec, num_threads, skewness);
 		return 0;
 	}
