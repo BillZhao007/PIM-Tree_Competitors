@@ -326,7 +326,7 @@ void test_mem_usage(dataset_t* dataset) {
 
 const ycsb_workload_spec YCSB_A_SPEC = {{0.5,  0,    0.5,  0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_B_SPEC = {{0.95, 0,    0.05, 0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
-const ycsb_workload_spec YCSB_C_SPEC = {{0.001,  0,    0,    0.999,    0,    0  }, 10 * MILLION, DIST_ZIPF};
+const ycsb_workload_spec YCSB_C_SPEC = {{0.01,  0,    0,    0.99,    0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_D_SPEC = {{0,    0, 0,    0, 1.0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_E_SPEC = {{0,    0,    0,    0.05, 0.95, 0  }, 2  * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_F_SPEC = {{0.5,  0,    0,    0,    0,    0.5}, 10 * MILLION, DIST_ZIPF};
@@ -382,8 +382,9 @@ void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* w
 
 		if (num_inserts == inserts_per_thread && op->type == YCSB_INSERT) {
 			// Used all keys intended for insertion. Do another op type.
-			i--;
-			continue;
+			// i--;
+			// continue;
+			op->type = YCSB_READ;
 		}
 
 		switch (op->type) {
@@ -721,15 +722,17 @@ int main(int argc, char** argv) {
 	pim_num = get_uint64_flag(args, "--pim-nr", 2560);
 	dist_class = get_int_flag(args, "--dist", DIST_UNIFORM);
 
+	test_name = args->args[0];
 	seed_and_print();
-	result = init_dataset(&dataset, args->args[1], dataset_size);
-
+	if (!strcmp(test_name, "ycsb-c") || !strcmp(test_name, "mt-ycsb-c"))
+		result = init_dataset(&dataset, args->args[1], dataset_size + num_threads * dataset_size / 100);
+	else
+		result = init_dataset(&dataset, args->args[1], dataset_size);
+	
 	if (!result) {
 		printf("Error creating dataset.\n");
 		return 1;
 	}
-
-	test_name = args->args[0];
 
 	if (!strcmp(test_name, "insert") || !strcmp(test_name, "mt-insert")) {
 		test_mt_insert(&dataset, num_threads, skewness);
@@ -777,8 +780,6 @@ int main(int argc, char** argv) {
 	}
 
 	if (is_ycsb) {
-		// if (has_flag(args, "--ycsb-uniform-dist"))
-		// 	ycsb_spec.distribution = DIST_UNIFORM;
 		ycsb_spec.distribution = dist_class;
 		ycsb_spec.num_ops = dataset_size / 100;
 		test_ycsb(&dataset, &ycsb_spec, num_threads, skewness);
