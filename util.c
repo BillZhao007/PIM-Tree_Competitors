@@ -11,6 +11,10 @@
 #include <sched.h>
 #include "util.h"
 
+#include "papi.h"
+
+#define PAPI_EXP true
+
 #define HUGEPAGE_LOG_SIZE 21
 
 #define DATASET_DEFAULT_SIZE 100000000
@@ -523,6 +527,12 @@ uint64_t rand_dist(rand_distribution* dist) {
 	#endif
 }
 
+#ifdef PAPI_EXP
+#define MAX_CPU 256
+#define PAPI_MEASUREMENTS 5
+long long papi_values[MAX_CPU][PAPI_MEASUREMENTS];
+#endif
+
 typedef struct {
 	void* (*thread_func)(void*);
 	void* arg;
@@ -530,13 +540,61 @@ typedef struct {
 } run_with_affinity_ctx;
 
 void* run_with_affinity(void* arg) {
+	#ifdef PAPI_EXP
+		if(PAPI_thread_init(pthread_self) != PAPI_OK) {
+			printf("PAPI_thread_init fail\n");
+			exit(1);
+		}
+		long long papi_values_0[PAPI_MEASUREMENTS], papi_values_1[PAPI_MEASUREMENTS];
+		int papi_event = PAPI_NULL;
+		int papi_retval = PAPI_create_eventset(&papi_event);
+		if(papi_retval != PAPI_OK){
+			printf("PAPI create event fail\n");
+			exit(-1);
+		}
+		papi_retval = PAPI_add_event(papi_event, PAPI_L3_TCM);
+		papi_retval = PAPI_add_event(papi_event, PAPI_REF_CYC);
+		papi_retval = PAPI_add_event(papi_event, PAPI_TOT_INS);
+		papi_retval = PAPI_add_event(papi_event, PAPI_L1_TCM);
+		papi_retval = PAPI_add_event(papi_event, PAPI_L2_TCM);
+		if(papi_retval != PAPI_OK){
+			printf("PAPI add event fail: %d\n", papi_retval);
+			exit(-1);
+		}
+		if(PAPI_start(papi_event) != PAPI_OK)
+			papi_retval = PAPI_start(papi_event);
+		PAPI_read(papi_event, papi_values_0);
+		if(PAPI_read(papi_event, papi_values_0) != PAPI_OK){
+			printf("PAPI read fail\n");
+			exit(-1);
+		}
+	#endif
+	
 	run_with_affinity_ctx* ctx = (run_with_affinity_ctx*) arg;
 	cpu_set_t cpu_set;
 
 	CPU_ZERO(&cpu_set);
 	CPU_SET(ctx->cpu, &cpu_set);
 	sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set);
-	return ctx->thread_func(ctx->arg);
+	auto res = ctx->thread_func(ctx->arg);
+
+	#ifdef PAPI_EXP
+		if(PAPI_stop(papi_event, papi_values_1) != PAPI_OK){
+			printf("PAPI_stop fail\n");
+			exit(1);
+		}
+		if(PAPI_cleanup_eventset(papi_event) != PAPI_OK){
+			printf("PAPI_cleanup_eventset fail\n");
+			exit(1);
+		}
+		if(PAPI_destroy_eventset(&papi_event) != PAPI_OK){
+			printf("PAPI_destroy_eventset fail\n");
+			exit(1);
+		}
+		for(int i=0; i<PAPI_MEASUREMENTS; i++)
+			papi_values[ctx->cpu][i] = papi_values_1[i] - papi_values_0[i];
+	#endif
+	return res;
 }
 
 int run_multiple_threads(void* (*thread_func)(void*), int num_threads, void* thread_contexts, int context_size) {
@@ -546,6 +604,13 @@ int run_multiple_threads(void* (*thread_func)(void*), int num_threads, void* thr
 	run_with_affinity_ctx wrapper_contexts[num_threads];
 	pthread_t threads[num_threads];
 	cpu_set_t mask;
+	#ifdef PAPI_EXP
+		long long papi_res[PAPI_MEASUREMENTS] = {0};
+		if(PAPI_library_init(PAPI_VER_CURRENT) != PAPI_VER_CURRENT) {
+			printf("PAPI_library_init fail\n");
+			exit(1);
+		}
+	#endif
 
 	sched_getaffinity(0, sizeof(cpu_set_t), &mask);
 
@@ -580,7 +645,19 @@ int run_multiple_threads(void* (*thread_func)(void*), int num_threads, void* thr
 			printf("Thread join error\n");
 			return 0;
 		}
+		#ifdef PAPI_EXP
+			for(int j=0; j<PAPI_MEASUREMENTS; j++)
+				papi_res[j] += papi_values[wrapper_contexts[i].cpu][j];
+		#endif
 	}
+
+	#ifdef PAPI_EXP
+		printf("L3 cache misses: %lld\n", papi_res[0]);
+		printf("Cycles:          %lld\n", papi_res[1]);
+		printf("Instructions:    %lld\n", papi_res[2]);
+		printf("L1 cache misses: %lld\n", papi_res[3]);
+		printf("L2 cache misses: %lld\n", papi_res[4]);
+	#endif
 	return 1;
 }
 
