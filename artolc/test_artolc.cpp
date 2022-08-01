@@ -2,6 +2,7 @@
 
 #include "Tree.h"
 #include "../util.h"
+#include "papi.h"
 
 #define PID_NO_PROFILER 0
 #define DEFAULT_VALUE_SIZE 8
@@ -12,6 +13,9 @@
 #define RANGE_END_SIZE 129
 
 pid_t profiler_pid = PID_NO_PROFILER;
+
+int dist_class;
+uint64_t pim_num;
 
 // Notify the profiler that the critical section starts, so it should start collecting statistics
 void notify_critical_section_start() {
@@ -109,33 +113,83 @@ void* mt_insert_thread(void* arg) {
 	return NULL;
 }
 
-void test_mt_insert(dataset_t* dataset, unsigned int num_threads) {
-	uint64_t i;
+void test_mt_insert(dataset_t* dataset, unsigned int num_threads, double skewness=YCSB_SKEW) {
+	uint64_t i, j;
+	Key key;
 	kv_t** kv_ptrs;
 	stopwatch_t timer;
 	ART_OLC::Tree tree(load_key);
 	mt_insert_thread_ctx thread_contexts[num_threads];
+	uint64_t insert_per_thread = dataset->num_keys / 10 / num_threads;
+	dynamic_buffer_t workloads_buf;
+	rand_distribution dist;
+	auto thread_info = tree.getThreadInfo();
 
 	printf("Reading dataset...\n");
 	kv_ptrs = read_kvs(dataset, DEFAULT_VALUE_SIZE);
 
+	// printf("Inserting...\n");
+	// for (i = 0; i < dataset->num_keys; i++) {
+	// 	load_key((TID) kv_ptrs[i], key);
+	// 	tree.insert(key, (TID) kv_ptrs[i], thread_info);
+	// }
+
+	// printf("Creating Workload...\n");
+	// dynamic_buffer_init(&workloads_buf);
+	// if (dist_class == DIST_UNIFORM) {
+	// 	rand_uniform_init(&dist, dataset->num_keys);
+	// } else if (dist_class == DIST_ZIPF) {
+	// 	rand_zipf_init(&dist, dataset->num_keys, skewness);
+	// }
+	// #ifdef PIM_EXP
+	// else if(dist_class == DIST_PIM) {
+	// 	rand_pim_init(&dist, pim_num, skewness, dataset->num_keys);
+	// }
+	// #endif
+	// else {
+	// 	printf("Error: Unknown YCSB distribution\n");
+	// 	return;
+	// }
+	// for (i = 0; i < num_threads; i++) {
+	// 	thread_contexts[i].tree = &tree;
+	// 	thread_contexts[i].num_keys = insert_per_thread;
+	// 	thread_contexts[i].workload_buf = (uint8_t*) workloads_buf.pos;
+
+	// 	for (j = 0; j < insert_per_thread; j++) {
+	// 		kv_t* kv;
+	// 		if (dist_class == DIST_UNIFORM) {
+	// 			kv = kv_ptrs[rand_uint64() % dataset->num_keys];
+	// 		} else if (dist_class == DIST_ZIPF) {
+	// 			kv = kv_ptrs[rand_dist(&dist)];
+	// 		}
+	// 		#ifdef PIM_EXP
+	// 		else if(dist_class == DIST_PIM) {
+	// 			kv = kv_ptrs[rand_dist(&dist)];
+	// 		}
+	// 		#endif
+	// 		uint64_t data_size = sizeof(blob_t) + kv->key_size;
+	// 		uint64_t offset = dynamic_buffer_extend(&workloads_buf, data_size);
+	// 		blob_t* data = (blob_t*) (workloads_buf.ptr + offset);
+	// 		data->size = kv->key_size;
+	// 		memcpy(data->bytes, kv->kv, kv->key_size);
+	// 	}
+	// }
+
 	for (i = 0;i < num_threads;i++) {
 		uint64_t first_kv = dataset->num_keys * i / num_threads;
 		uint64_t last_kv = dataset->num_keys * (i+1) / num_threads;
-
 		thread_contexts[i].workload_buf = (uint8_t*) kv_ptrs[first_kv];
 		thread_contexts[i].num_keys = last_kv - first_kv;
 		thread_contexts[i].tree = &tree;
 	}
 
-	printf("Inserting...\n");
 	notify_critical_section_start();
 	stopwatch_start(&timer);
 	run_multiple_threads(mt_insert_thread, num_threads, thread_contexts, sizeof(mt_insert_thread_ctx));
 	float time_took = stopwatch_value(&timer);
 	notify_critical_section_end();
 
-	report_mt(time_took, dataset->num_keys, num_threads);
+	report_mt(time_took, insert_per_thread * num_threads, num_threads);
 }
 
 typedef struct {
@@ -170,7 +224,7 @@ void* mt_pos_lookup_thread(void* arg) {
 	return NULL;
 }
 
-void test_mt_pos_lookup(dataset_t* dataset, unsigned int num_threads) {
+void test_mt_pos_lookup(dataset_t* dataset, unsigned int num_threads, double skewness=YCSB_SKEW) {
 	const uint64_t lookups_per_thread = 10 * MILLION;
 
 	uint64_t i, j;
@@ -180,6 +234,7 @@ void test_mt_pos_lookup(dataset_t* dataset, unsigned int num_threads) {
 	dynamic_buffer_t workloads_buf;
 	ART_OLC::Tree tree(load_key);
 	mt_pos_lookup_ctx thread_contexts[num_threads];
+	rand_distribution dist;
 	auto thread_info = tree.getThreadInfo();
 
 	kv_ptrs = read_kvs(dataset, DEFAULT_VALUE_SIZE);
@@ -192,13 +247,37 @@ void test_mt_pos_lookup(dataset_t* dataset, unsigned int num_threads) {
 
 	printf("Creating workloads...\n");
 	dynamic_buffer_init(&workloads_buf);
+	if (dist_class == DIST_UNIFORM) {
+		rand_uniform_init(&dist, dataset->num_keys);
+	} else if (dist_class == DIST_ZIPF) {
+		rand_zipf_init(&dist, dataset->num_keys, skewness);
+	}
+	#ifdef PIM_EXP
+	else if(dist_class == DIST_PIM) {
+		rand_pim_init(&dist, pim_num, skewness, dataset->num_keys);
+	}
+	#endif
+	else {
+		printf("Error: Unknown YCSB distribution\n");
+		return;
+	}
 	for (i = 0; i < num_threads; i++) {
 		thread_contexts[i].tree = &tree;
 		thread_contexts[i].num_keys = lookups_per_thread;
 		thread_contexts[i].keys_buf = (uint8_t*) workloads_buf.pos;
 
 		for (j = 0; j < lookups_per_thread; j++) {
-			kv_t* kv = kv_ptrs[rand_uint64() % dataset->num_keys];
+			kv_t* kv;
+			if (dist_class == DIST_UNIFORM) {
+				kv = kv_ptrs[rand_uint64() % dataset->num_keys];
+			} else if (dist_class == DIST_ZIPF) {
+				kv = kv_ptrs[rand_dist(&dist)];
+			}
+			#ifdef PIM_EXP
+			else if(dist_class == DIST_PIM) {
+				kv = kv_ptrs[rand_dist(&dist)];
+			}
+			#endif
 			uint64_t data_size = sizeof(blob_t) + kv->key_size;
 			uint64_t offset = dynamic_buffer_extend(&workloads_buf, data_size);
 			blob_t* data = (blob_t*) (workloads_buf.ptr + offset);
@@ -247,13 +326,13 @@ void test_mem_usage(dataset_t* dataset) {
 
 const ycsb_workload_spec YCSB_A_SPEC = {{0.5,  0,    0.5,  0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_B_SPEC = {{0.95, 0,    0.05, 0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
-const ycsb_workload_spec YCSB_C_SPEC = {{1.0,  0,    0,    0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
-const ycsb_workload_spec YCSB_D_SPEC = {{0,    0.95, 0,    0.05, 0,    0  }, 10 * MILLION, DIST_ZIPF};
+const ycsb_workload_spec YCSB_C_SPEC = {{0,  0,    1.0,    0,    0,    0  }, 10 * MILLION, DIST_ZIPF};
+const ycsb_workload_spec YCSB_D_SPEC = {{0,    0, 0,    0, 1.0,    0  }, 10 * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_E_SPEC = {{0,    0,    0,    0.05, 0.95, 0  }, 2  * MILLION, DIST_ZIPF};
 const ycsb_workload_spec YCSB_F_SPEC = {{0.5,  0,    0,    0,    0,    0.5}, 10 * MILLION, DIST_ZIPF};
 
 void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* workload,
-							const ycsb_workload_spec* spec, int thread_id, int num_threads) {
+							const ycsb_workload_spec* spec, int thread_id, int num_threads, double skewness=YCSB_SKEW) {
 	kv_t* kv;
 	uint64_t i;
 	uint64_t data_size;
@@ -276,8 +355,14 @@ void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* w
 	if (spec->distribution == DIST_UNIFORM) {
 		rand_uniform_init(&dist, workload->initial_num_keys);
 	} else if (spec->distribution == DIST_ZIPF) {
-		rand_zipf_init(&dist, workload->initial_num_keys, YCSB_SKEW);
-	} else {
+		rand_zipf_init(&dist, workload->initial_num_keys, skewness);
+	}
+	#ifdef PIM_EXP
+	else if(spec->distribution == DIST_PIM) {
+		rand_pim_init(&dist, pim_num, skewness, workload->initial_num_keys);
+	}
+	#endif
+	else {
 		printf("Error: Unknown YCSB distribution\n");
 		return;
 	}
@@ -286,7 +371,7 @@ void generate_ycsb_workload(dataset_t* dataset, kv_t** kv_ptrs, ycsb_workload* w
 		// spec->distribution is meaningless for read-latest. Read offsets for read-latest are
 		// always Zipf-distributed.
 		assert(spec->distribution == DIST_ZIPF);
-		rand_zipf_rank_init(&backward_dist, workload->initial_num_keys, YCSB_SKEW);
+		rand_zipf_rank_init(&backward_dist, workload->initial_num_keys, skewness);
 	}
 
 	dynamic_buffer_init(&workload_buf);
@@ -564,7 +649,7 @@ void* ycsb_thread(void* arg) {
 	return NULL;
 }
 
-void test_ycsb(dataset_t* dataset, const ycsb_workload_spec* spec, unsigned int num_threads) {
+void test_ycsb(dataset_t* dataset, const ycsb_workload_spec* spec, unsigned int num_threads, double skewness=YCSB_SKEW) {
 	uint64_t i;
 	Key key;
 	kv_t** kv_ptrs;
@@ -583,7 +668,7 @@ void test_ycsb(dataset_t* dataset, const ycsb_workload_spec* spec, unsigned int 
 		thread_contexts[i].thread_id = i;
 		thread_contexts[i].inserts_done = 0;
 		thread_contexts[i].thread_contexts = thread_contexts;
-		generate_ycsb_workload(dataset, kv_ptrs, &(thread_contexts[i].workload), spec, i, num_threads);
+		generate_ycsb_workload(dataset, kv_ptrs, &(thread_contexts[i].workload), spec, i, num_threads, skewness);
 	}
 
 	printf("Inserting...\n");
@@ -615,6 +700,7 @@ int main(int argc, char** argv) {
 	int num_threads;
 	int is_ycsb = 0;
 	char* test_name;
+	double skewness;
 	uint64_t dataset_size;
 	dataset_t dataset;
 	ycsb_workload_spec ycsb_spec;
@@ -624,10 +710,13 @@ int main(int argc, char** argv) {
 		printf("Usage: %s [options] test_name dataset\n", argv[0]);
 		return 1;
 	}
-
+	
 	profiler_pid = get_int_flag(args, "--profiler-pid", PID_NO_PROFILER);
 	dataset_size = get_uint64_flag(args, "--dataset-size", DATASET_ALL_KEYS);
 	num_threads = get_int_flag(args, "--threads", 4);
+	skewness = get_double_flag(args, "--skew", 0.0);
+	pim_num = get_uint64_flag(args, "--pim-nr", 2560);
+	dist_class = get_int_flag(args, "--dist", DIST_UNIFORM);
 
 	seed_and_print();
 	result = init_dataset(&dataset, args->args[1], dataset_size);
@@ -640,12 +729,12 @@ int main(int argc, char** argv) {
 	test_name = args->args[0];
 
 	if (!strcmp(test_name, "insert") || !strcmp(test_name, "mt-insert")) {
-		test_mt_insert(&dataset, num_threads);
+		test_mt_insert(&dataset, num_threads, skewness);
 		return 0;
 	}
 
 	if (!strcmp(test_name, "pos-lookup") || !strcmp(test_name, "mt-pos-lookup")) {
-		test_mt_pos_lookup(&dataset, num_threads);
+		test_mt_pos_lookup(&dataset, num_threads, skewness);
 		return 0;
 	}
 
@@ -688,7 +777,7 @@ int main(int argc, char** argv) {
 		if (has_flag(args, "--ycsb-uniform-dist"))
 			ycsb_spec.distribution = DIST_UNIFORM;
 
-		test_ycsb(&dataset, &ycsb_spec, num_threads);
+		test_ycsb(&dataset, &ycsb_spec, num_threads, skewness);
 		return 0;
 	}
 
