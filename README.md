@@ -1,4 +1,4 @@
-# Indexes used for PIM-Tree benchmarks
+# In-memory Database Indexes used for Benchmarks
 
 This repository is forked from https://github.com/cuckoo-trie/other-benchmarked-indexes. It is used here as a competitor in evaluation of the PIM-Tree.
 
